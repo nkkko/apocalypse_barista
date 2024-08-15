@@ -58,10 +58,19 @@ class Enemy(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
         self.rect.topleft = (x, y)
         self.velocity = 2
+        self.direction = random.choice([(1, 0), (-1, 0), (0, 1), (0, -1)])
+        self.move_timer = 0
+        self.move_interval = random.randint(30, 120)  # Promjena smjera svakih 0.5-2 sekunde
 
     def update(self):
-        self.rect.x += random.choice([-1, 0, 1]) * self.velocity
-        self.rect.y += random.choice([-1, 0, 1]) * self.velocity
+        self.move_timer += 1
+        if self.move_timer >= self.move_interval:
+            self.direction = random.choice([(1, 0), (-1, 0), (0, 1), (0, -1)])
+            self.move_timer = 0
+            self.move_interval = random.randint(30, 120)
+
+        self.rect.x += self.direction[0] * self.velocity
+        self.rect.y += self.direction[1] * self.velocity
 
 class Item(pygame.sprite.Sprite):
     def __init__(self, x, y):
@@ -143,8 +152,12 @@ while running:
             offset_x, offset_y = prev_offset_x, prev_offset_y
             break
 
+    # Ažuriraj neprijatelje
+    enemies.update()
+
     # Check collision with enemies
     for enemy in enemies:
+        screen.blit(enemy.image, (enemy.rect.x + offset_x, enemy.rect.y + offset_y))     # Crtaj neprijatelje s pomacima
         if player.rect.colliderect(enemy.rect.move(offset_x, offset_y)):
             player.hp -= 1
             if player.hp <= 0:
