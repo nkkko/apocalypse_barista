@@ -31,16 +31,90 @@ items = pygame.sprite.Group()
 # Keeps track of generated cells
 generated_cells = set()
 
+# Load tileset
+tileset = pygame.image.load('assets/sprites/knight.png').convert_alpha()
+
+def get_tile(image, x, y, width, height):
+    """ Izreži (crop) dio slike zadanih dimenzija. """
+    tile = pygame.Surface((width, height), pygame.SRCALPHA)
+    tile.blit(image, (0, 0), (x, y, width, height))
+    return tile
+
+# Get the animation frames from the second row
+def load_animation_frames():
+    frames = []
+    for i in range(8):  # Pretpostavljamo da je 8 frameova u redu za animaciju trčanja
+        frames.append(get_tile(tileset, i * 32, 64, 32, 32))  # Drugi red (y=32)
+    return frames
+
+# Load the run animation frames
+run_frames = load_animation_frames()
+
 class Player(pygame.sprite.Sprite):
     def __init__(self):
         super().__init__()
-        self.image = pygame.Surface((50, 50))
-        self.image.fill(BLACK)
+        self.run_frames = [pygame.transform.scale(frame, (64, 64)) for frame in run_frames]
+        self.image = self.run_frames[0]
         self.rect = self.image.get_rect()
         self.rect.center = (WIDTH // 2, HEIGHT // 2)
         self.velocity = 5
         self.hp = 100
         self.items_collected = 0
+        self.anim_index = 0
+        self.flipped = False
+        self.frame_speed = 5  # Po koliko sličica uzeti jednu frame (niže vrijednosti brže animacije)
+
+    def update(self, moving):
+        if moving:
+            self.anim_index += 1
+            if self.anim_index >= len(self.run_frames) * self.frame_speed:
+                self.anim_index = 0
+
+            frame = self.run_frames[self.anim_index // self.frame_speed]
+            if self.flipped:
+                self.image = pygame.transform.flip(frame, True, False)
+            else:
+                self.image = frame
+        else:
+            # Kada se igrač ne kreće, zadrži prvu sličicu
+            frame = self.run_frames[0]
+            if self.flipped:
+                self.image = pygame.transform.flip(frame, True, False)
+            else:
+                self.image = frame
+
+
+def generate_terrain(cell_x, cell_y):
+    """ Generate barriers, items, and enemies for the given cell coordinates. """
+    # Ensure we don't regenerate the same cell
+    if (cell_x, cell_y) in generated_cells:
+        return
+
+    # Randomly place some barriers
+    for _ in range(5):
+        width = random.randint(50, 150)
+        height = random.randint(10, 50)
+        x = random.randint(cell_x * GRID_SIZE, (cell_x + 1) * GRID_SIZE - width)
+        y = random.randint(cell_y * GRID_SIZE, (cell_y + 1) * GRID_SIZE - height)
+        barrier = Barrier(x, y, width, height)
+        barriers.add(barrier)
+
+    # Randomly place some items
+    for _ in range(3):
+        x = random.randint(cell_x * GRID_SIZE, (cell_x + 1) * GRID_SIZE - 20)
+        y = random.randint(cell_y * GRID_SIZE, (cell_y + 1) * GRID_SIZE - 20)
+        item = Item(x, y)
+        items.add(item)
+
+    # Randomly place some enemies
+    for _ in range(2):
+        x = random.randint(cell_x * GRID_SIZE, (cell_x + 1) * GRID_SIZE - 50)
+        y = random.randint(cell_y * GRID_SIZE, (cell_y + 1) * GRID_SIZE - 50)
+        enemy = Enemy(x, y)
+        enemies.add(enemy)
+
+    # Mark this cell as generated
+    generated_cells.add((cell_x, cell_y))
 
 class Barrier(pygame.sprite.Sprite):
     def __init__(self, x, y, width, height):
@@ -80,38 +154,6 @@ class Item(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
         self.rect.topleft = (x, y)
 
-def generate_terrain(cell_x, cell_y):
-    """ Generate barriers, items, and enemies for the given cell coordinates. """
-    # Ensure we don't regenerate the same cell
-    if (cell_x, cell_y) in generated_cells:
-        return
-
-    # Randomly place some barriers
-    for _ in range(5):
-        width = random.randint(50, 150)
-        height = random.randint(10, 50)
-        x = random.randint(cell_x * GRID_SIZE, (cell_x + 1) * GRID_SIZE - width)
-        y = random.randint(cell_y * GRID_SIZE, (cell_y + 1) * GRID_SIZE - height)
-        barrier = Barrier(x, y, width, height)
-        barriers.add(barrier)
-
-    # Randomly place some items
-    for _ in range(3):
-        x = random.randint(cell_x * GRID_SIZE, (cell_x + 1) * GRID_SIZE - 20)
-        y = random.randint(cell_y * GRID_SIZE, (cell_y + 1) * GRID_SIZE - 20)
-        item = Item(x, y)
-        items.add(item)
-
-    # Randomly place some enemies
-    for _ in range(2):
-        x = random.randint(cell_x * GRID_SIZE, (cell_x + 1) * GRID_SIZE - 50)
-        y = random.randint(cell_y * GRID_SIZE, (cell_y + 1) * GRID_SIZE - 50)
-        enemy = Enemy(x, y)
-        enemies.add(enemy)
-
-    # Mark this cell as generated
-    generated_cells.add((cell_x, cell_y))
-
 # Create the player instance
 player = Player()
 player_group = pygame.sprite.Group()
@@ -137,14 +179,23 @@ while running:
     prev_offset_x, prev_offset_y = offset_x, offset_y
 
     # Update the offsets based on key presses
+    moving = False
     if keys[pygame.K_LEFT]:
         offset_x += player.velocity
+        moving = True
+        player.flipped = True
     if keys[pygame.K_RIGHT]:
         offset_x -= player.velocity
+        moving = True
+        player.flipped = False
     if keys[pygame.K_UP]:
         offset_y += player.velocity
+        moving = True
     if keys[pygame.K_DOWN]:
         offset_y -= player.velocity
+        moving = True
+
+    player.update(moving)
 
     # Check collision with barriers
     for barrier in barriers:
@@ -157,7 +208,7 @@ while running:
 
     # Check collision with enemies
     for enemy in enemies:
-        screen.blit(enemy.image, (enemy.rect.x + offset_x, enemy.rect.y + offset_y))     # Crtaj neprijatelje s pomacima
+        screen.blit(enemy.image, (enemy.rect.x + offset_x, enemy.rect.y + offset_y))
         if player.rect.colliderect(enemy.rect.move(offset_x, offset_y)):
             player.hp -= 1
             if player.hp <= 0:
